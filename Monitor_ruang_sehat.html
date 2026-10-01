@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard Sistem Monitoring Udara</title>
+<style>
+  :root {
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #a3a3a3;
+    --color-text-tertiary: #737373;
+    --color-border-tertiary: #3d3d3d;
+    --color-background-warning: #422006;
+    --color-text-warning: #facc15;
+    --color-background-success: #052e16;
+    --color-text-success: #4ade80;
+    --color-background-danger: #450a0a;
+    --color-text-danger: #f87171;
+    --border-radius-lg: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background-color: #050505;
+    color: #ffffff;
+    padding-left: 35px;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 25px;
+    background-color: #ef4444;
+    transition: background-color 0.5s ease, box-shadow 0.5s ease;
+    z-index: 9999;
+  }
+  body.online::before {
+    background-color: #22c55e;
+    box-shadow: inset -5px 0 20px rgba(34, 197, 94, 0.3);
+  }
+
+  .wrap { padding: 1rem 1rem 1rem 0; }
+  h1 { font-size: 13px; font-weight: 500; letter-spacing: .1em; color: var(--color-text-secondary); margin-bottom: 1.25rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #status { font-size: 10px; padding: 2px 8px; border-radius: 99px; background: var(--color-background-warning); color: var(--color-text-warning); transition: background .4s; }
+  #status.ok { background: var(--color-background-success); color: var(--color-text-success); }
+  #status.err { background: var(--color-background-danger); color: var(--color-text-danger); }
+  #last-update { font-size: 11px; color: var(--color-text-tertiary); margin-left: auto; }
+
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 1.25rem; }
+  .metric { background: #0a0a0a; border-radius: 28px; padding: 24px 20px; display: flex; flex-direction: column; border: 4px solid transparent; }
+  .metric.m-temp  { border-color: #f97316; }
+  .metric.m-humid { border-color: #a855f7; }
+  .metric.m-wind  { border-color: #06b6d4; }
+  .metric.m-co2   { border-color: #22c55e; }
+  .metric .lbl  { font-size: 14px; color: #888888; margin-bottom: 15px; }
+  .metric .num  { font-size: 48px; font-weight: 500; color: #ffffff; line-height: 1; margin-bottom: 10px; }
+  .metric .unit { font-size: 12px; color: #666666; margin-bottom: 20px; }
+  .metric .num.err { color: var(--color-text-danger); }
+
+  .status-bar { height: 14px; width: 100%; border-radius: 99px; background: #222222; transition: background 0.4s ease; }
+  .status-safe     { background: #22c55e !important; }
+  .status-cautious { background: #eab308 !important; }
+  .status-danger   { background: #ef4444 !important; }
+
+  .card { background: #2a2a2a; border: 0.5px solid #3d3d3d; border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  .card-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .card-hd h2 { font-size: 11px; color: var(--color-text-secondary); letter-spacing: .08em; font-weight: 400; }
+
+  .info { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .info .k { display: block; font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px; }
+  .info .v { font-size: 18px; }
+  .badge { display: inline-block; font-size: 13px; padding: 2px 12px; border-radius: 99px; background: #222222; color: #ffffff; }
+  .badge.status-safe, .badge.status-cautious { color: #000000; }
+  .badge.status-danger { color: #ffffff; }
+
+  .tabs { display: flex; gap: 6px; margin-left: auto; }
+  .tabs button { font-family: inherit; font-size: 11px; padding: 6px 14px; border: 1px solid #444444; border-radius: 8px; background: #1e1e1e; color: #bbbbbb; cursor: pointer; transition: all 0.2s; }
+  .tabs button.active { background: #f97316; color: #000000; border-color: transparent; font-weight: bold; }
+  .chart-wrap { position: relative; height: 150px; }
+
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--color-text-tertiary); padding: 4px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); font-weight: 400; }
+  td { padding: 5px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); color: var(--color-text-primary); }
+  .co2-good { color: var(--color-text-success); }
+  .co2-mid  { color: var(--color-text-warning); }
+  .co2-bad  { color: var(--color-text-danger); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>
+    DASHBOARD SISTEM MONITORING UDARA
+    <span id="status">CONNECTING…</span>
+    <span id="last-update"></span>
+  </h1>
+
+  <div class="metrics">
+    <div class="metric m-temp">
+      <div class="lbl">Suhu</div>
+      <div class="num" id="val-temp">--</div>
+      <div class="unit">Derajat Celsius</div>
+      <div class="status-bar" id="bar-temp"></div>
+    </div>
+    <div class="metric m-humid">
+      <div class="lbl">Kelembapan</div>
+      <div class="num" id="val-humid">--</div>
+      <div class="unit">Persen %</div>
+      <div class="status-bar" id="bar-humid"></div>
+    </div>
+    <div class="metric m-wind">
+      <div class="lbl">Kecepatan angin</div>
+      <div class="num" id="val-wind">--</div>
+      <div class="unit">Meter per detik (m/s)</div>
+      <div class="status-bar" id="bar-wind"></div>
+    </div>
+    <div class="metric m-co2">
+      <div class="lbl">Kadar CO2</div>
+      <div class="num" id="val-co2">--</div>
+      <div class="unit">PPM</div>
+      <div class="status-bar" id="bar-co2"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>KIPAS DAN KUALITAS UDARA</h2></div>
+    <div class="info">
+      <div><span class="k">Kualitas udara</span><span class="badge" id="val-aq">--</span></div>
+      <div><span class="k">Kipas (relay)</span><span class="v" id="val-relay">--</span></div>
+      <div><span class="k">Putaran kipas</span><span class="v" id="val-fan">--</span></div>
+      <div><span class="k">TVOC</span><span class="v" id="val-tvoc">--</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">
+      <h2 id="chart-label">LIVE — SUHU</h2>
+      <div class="tabs">
+        <button class="active" data-key="temperature">SUHU</button>
+        <button data-key="humidity">LEMBAP</button>
+        <button data-key="wind_speed">ANGIN</button>
+        <button data-key="co2">CO₂</button>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>LOG — 20 data terakhir</h2></div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Waktu</th><th>SUHU °C</th><th>LEMBAP %</th><th>ANGIN m/s</th><th>CO₂ ppm</th><th>KIPAS</th></tr>
+        </thead>
+        <tbody id="db-rows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const API_URL = 'http://localhost:3000';
+const SEND_INTERVAL_MS   = 30000;                 // sama dengan timemeasure di Arduino
+const OFFLINE_TIMEOUT_MS = SEND_INTERVAL_MS * 2.5; // toleransi telat kirim
+const MAX_LIVE = 20;
+
+// Batas cadangan (dipakai hanya jika baris data tidak punya status dari Arduino).
+// Nilainya mengikuti batas di firmware: batas aman dan margin peringatan.
+const LIMITS = {
+  temp:  [30, 32],
+  humid: [65, 70],
+  wind:  [2.0, 5.0],
+  co2:   [700, 800],
+};
+
+const CHART_META = {
+  temperature: { label: "LIVE — SUHU",      color: "#f97316" },
+  humidity:    { label: "LIVE — LEMBAP",    color: "#8b5cf6" },
+  wind_speed:  { label: "LIVE — ANGIN",     color: "#3b82f6" },
+  co2:         { label: "LIVE — KADAR CO₂", color: "#10b981" },
+};
+
+// Status dari Arduino -> kelas warna
+const LEVEL_CLASS = {
+  AMAN: 'status-safe',
+  PERINGATAN: 'status-cautious',
+  BAHAYA: 'status-danger',
+};
+
+const live = { labels: [], temperature: [], humidity: [], wind_speed: [], co2: [] };
+const db   = [];
+let activeKey = "temperature";
+let lastId = 0;
+let deviceTimeout;
+
+const elStatus = document.getElementById('status');
+const elLast   = document.getElementById('last-update');
+const elRows   = document.getElementById('db-rows');
+const elLabel  = document.getElementById('chart-label');
+const vals = {
+  temperature: document.getElementById('val-temp'),
+  humidity:    document.getElementById('val-humid'),
+  wind_speed:  document.getElementById('val-wind'),
+  co2:         document.getElementById('val-co2'),
+};
+
+// ---------- Helper ----------
+function hhmm(d) { return d.toTimeString().slice(0, 8); }
+
+// SQLite menyimpan CURRENT_TIMESTAMP dalam UTC tanpa "Z"
+function parseTime(s) {
+  if (!s) return new Date();
+  return new Date(String(s).replace(' ', 'T') + 'Z');
+}
+
+// Bulatkan, tapi pertahankan null (null * 10 = 0 di JS, jadi harus dicek dulu)
+function num(v, factor) {
+  return (v == null || isNaN(v)) ? null : Math.round(v * factor) / factor;
+}
+function show(v) { return v == null ? '--' : v; }
+
+function co2cls(v) {
+  if (v == null) return '';
+  return v < LIMITS.co2[0] ? 'co2-good' : v < LIMITS.co2[1] ? 'co2-mid' : 'co2-bad';
+}
+
+function setStatus(s, t) {
+  elStatus.className = s;
+  elStatus.textContent = t;
+  document.body.classList.toggle('online', s === 'ok');
+}
+
+function setVal(key, v) {
+  const bad = v == null || isNaN(v);
+  vals[key].textContent = bad ? 'ERR' : v;
+  vals[key].classList.toggle('err', bad);
+}
+
+function getRangeClass(value, [safe, cautious]) {
+  if (value == null || isNaN(value)) return '';
+  if (value <= safe) return 'status-safe';
+  if (value <= cautious) return 'status-cautious';
+  return 'status-danger';
+}
+
+// Pakai status dari Arduino jika ada; jika tidak, hitung dari batas cadangan
+function setBar(id, value, arduinoStatus, limits) {
+  let cls = '';
+  if (value != null) cls = LEVEL_CLASS[arduinoStatus] || getRangeClass(value, limits);
+  document.getElementById(id).className = 'status-bar ' + cls;
+}
+
+function setInfo(r) {
+  const aq = document.getElementById('val-aq');
+  aq.textContent = r.air_quality || '--';
+  aq.className = 'badge ' + (LEVEL_CLASS[r.air_quality] || '');
+  document.getElementById('val-relay').textContent = r.relay_state || '--';
+  document.getElementById('val-fan').textContent =
+    r.fan_rpm == null ? '--' : Math.round(r.fan_rpm) + ' RPM';
+  document.getElementById('val-tvoc').textContent =
+    r.tvoc == null ? '--' : r.tvoc + ' ppb';
+}
+
+function resetDeviceTimeout(ms = OFFLINE_TIMEOUT_MS) {
+  clearTimeout(deviceTimeout);
+  deviceTimeout = setTimeout(() => setStatus('err', 'OFFLINE'), ms);
+}
+
+// ---------- Grafik ----------
+const dataset = {
+  data: live.temperature,
+  borderColor: '#f97316',
+  backgroundColor: '#f9731620',
+  borderWidth: 2, pointRadius: 0, tension: 0.4, fill: true,
+};
+
+const chart = new Chart(document.getElementById('chart'), {
+  type: 'line',
+  data: { labels: live.labels, datasets: [dataset] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { font: { family: 'monospace', size: 10 }, maxTicksLimit: 5, maxRotation: 0 } },
+      y: { ticks: { font: { family: 'monospace', size: 10 } } },
+    },
+    animation: { duration: 200 },
+  }
+});
+
+function switchChart(key) {
+  activeKey = key;
+  const m = CHART_META[key];
+  dataset.data = live[key];
+  dataset.borderColor = m.color;
+  dataset.backgroundColor = m.color + '20';
+  chart.data.datasets[0] = dataset;
+  elLabel.textContent = m.label;
+  chart.update('none');
+  document.querySelectorAll('.tabs button').forEach(b =>
+    b.classList.toggle('active', b.dataset.key === key));
+}
+
+document.querySelectorAll('.tabs button').forEach(b =>
+  b.addEventListener('click', () => switchChart(b.dataset.key)));
+
+// ---------- Tabel ----------
+function renderDB() {
+  elRows.innerHTML = db.slice(-20).reverse().map(r => `
+    <tr>
+      <td>${hhmm(r.ts)}</td>
+      <td>${show(r.temperature)}</td>
+      <td>${show(r.humidity)}</td>
+      <td>${show(r.wind_speed)}</td>
+      <td class="${co2cls(r.co2)}">${show(r.co2)}</td>
+      <td>${r.relay_state || '--'}</td>
+    </tr>`).join('');
+}
+
+// ---------- Proses data ----------
+function processReading(r, isHistory = false) {
+  if (r.id <= lastId) return;
+  lastId = r.id;
+
+  const dateObj = parseTime(r.recorded_at);
+  const t = num(r.temperature, 10);
+  const h = num(r.humidity, 10);
+  const w = num(r.wind_speed, 100);
+  const c = num(r.co2, 1);
+
+  setVal('temperature', t);
+  setVal('humidity', h);
+  setVal('wind_speed', w);
+  setVal('co2', c);
+  setInfo(r);
+  elLast.textContent = 'last: ' + hhmm(dateObj);
+
+  setBar('bar-temp',  t, r.temp_status, LIMITS.temp);
+  setBar('bar-humid', h, r.hum_status,  LIMITS.humid);
+  setBar('bar-wind',  w, null,          LIMITS.wind);
+  setBar('bar-co2',   c, r.co2_status,  LIMITS.co2);
+
+  live.labels.push(hhmm(dateObj));
+  live.temperature.push(t);
+  live.humidity.push(h);
+  live.wind_speed.push(w);
+  live.co2.push(c);
+
+  if (live.labels.length > MAX_LIVE) {
+    ['labels', 'temperature', 'humidity', 'wind_speed', 'co2'].forEach(k => live[k].shift());
+  }
+
+  db.push({ ts: dateObj, temperature: t, humidity: h, wind_speed: w, co2: c, relay_state: r.relay_state });
+  if (db.length > 100) db.shift();
+
+  if (!isHistory) {
+    chart.update('none');
+    renderDB();
+    setStatus('ok', 'LIVE');
+    resetDeviceTimeout();
+  }
+}
+
+// ---------- Koneksi ke bridge ----------
+async function loadHistory() {
+  setStatus('', 'CONNECTING…');
+  try {
+    const res  = await fetch(API_URL + '/readings');
+    const rows = await res.json();
+
+    rows.forEach(r => processReading(r, true));
+    renderDB();
+    chart.update();
+
+    // Cek umur data terakhir: jangan tampil LIVE jika data sudah lama
+    const last = rows[rows.length - 1];
+    const age = last ? Date.now() - parseTime(last.recorded_at).getTime() : Infinity;
+    if (age > OFFLINE_TIMEOUT_MS) {
+      setStatus('err', 'OFFLINE');
+    } else {
+      setStatus('ok', 'LIVE');
+      resetDeviceTimeout(OFFLINE_TIMEOUT_MS - age);
+    }
+
+    setInterval(pollLatest, 2000);
+  } catch (err) {
+    console.error("Gagal terhubung ke Bridge (History):", err);
+    setStatus('err', 'BRIDGE ERROR');
+    setTimeout(loadHistory, 5000);
+  }
+}
+
+async function pollLatest() {
+  try {
+    const res  = await fetch(API_URL + '/latest');
+    const data = await res.json();
+    if (data && data.id) processReading(data);
+  } catch (err) {
+    console.error("Bridge offline:", err);
+    setStatus('err', 'BRIDGE OFFLINE');
+  }
+}
+
+loadHistory();
+</script>
+</body>
+</html>
