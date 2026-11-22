@@ -1,0 +1,11 @@
+{
+  "name": "dashboard-monitoring-udara",
+  "version": "2.0.0",
+  "private": true,
+  "description": "IoT Air Quality & Circulation Monitoring System",
+  "scripts": {
+    "start:backend": "cd backend && npm start",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build"
+  }
+}
